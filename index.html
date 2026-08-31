@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="沖縄県立高校入試数学の大問1に向けた、入試基本計算の練習アプリです。">
+  <title>👹 高校入試対策シリーズ ～入試基本計算～</title>
+  <link rel="stylesheet" href="style.css">
+  <script>
+    // require / html / textmacros を外す。生徒の入力を含む数式から \href 等が実行される経路を作らない。
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']],
+        packages: { '[-]': ['require', 'html', 'textmacros'] }
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+        ignoreHtmlClass: 'mathjax-ignore'
+      }
+    };
+  </script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+  <main id="app">
+    <!-- ============ HOME（共通スタート画面。配置・順序・文言は固定） ============ -->
+    <section id="home-screen" class="screen home-screen" aria-labelledby="home-title">
+      <div class="home-start">
+        <h1 id="home-title">
+          <span class="emoji-icon" aria-hidden="true">👹</span>
+          <span>高校入試対策シリーズ<br>～入試基本計算～</span>
+        </h1>
+        <button id="start-button" class="button primary" type="button">▶ スタート！</button>
+        <a class="about-link" href="legal.html">このアプリについて</a>
+      </div>
+      <aside class="history-card" aria-label="学習の履歴">
+        <h2>学習の履歴</h2>
+        <div id="history-list" class="history-list"></div>
+        <div class="card-rule"></div>
+        <button id="clear-history-button" class="button danger-text" type="button">この端末の記録を消す</button>
+      </aside>
+    </section>
+
+    <!-- ============ QUESTION（通常セットと復習で共用） ============ -->
+    <section id="question-screen" class="screen work-screen" hidden aria-labelledby="question-heading">
+      <header class="work-header">
+        <button id="quit-button" class="text-button" type="button">ホームへ</button>
+        <div class="progress-area">
+          <span id="progress-label">Q 1 / 10</span>
+          <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+        </div>
+        <div id="score-label" class="score-label">正解 0</div>
+      </header>
+
+      <div class="work-layout">
+        <article class="question-card">
+          <p id="mode-note" class="mode-note" hidden>復習中（この結果は記録に残りません）</p>
+          <p id="question-lead" class="question-lead">次の計算をしなさい。</p>
+          <h2 id="question-heading" class="math-display"></h2>
+
+          <div class="answer-area">
+            <label for="answer-field">答え</label>
+            <div class="answer-row">
+              <div class="math-field-wrap mathjax-ignore">
+                <math-field id="answer-field" math-virtual-keyboard-policy="manual"
+                            virtual-keyboard-mode="off" inputmode="latin" aria-label="答えの式"></math-field>
+              </div>
+              <!-- 単位は入力欄の一部ではなく、隣に置くラベル。単位のない問題でも幅は確保する -->
+              <span id="unit-label" class="unit-label is-empty" aria-hidden="true"></span>
+            </div>
+            <p class="input-note">※半角で入力してね（記号はボタンからも入れられます）</p>
+            <div id="keypad" class="keypad" aria-label="入力補助"></div>
+          </div>
+
+          <div class="answer-actions">
+            <button id="submit-button" class="button primary" type="button">決定</button>
+            <button id="next-button" class="button primary" type="button" hidden>次へ</button>
+          </div>
+
+          <!-- 正誤の演出。記号と文字の両方で示す（色だけに意味を持たせない） -->
+          <div id="verdict-badge" class="verdict-badge" hidden role="status" aria-live="polite">
+            <span id="verdict-mark" class="verdict-mark" aria-hidden="true"></span>
+            <span id="verdict-text" class="verdict-text"></span>
+          </div>
+        </article>
+
+        <aside class="support-card">
+          <h3>ヒント・解説</h3>
+          <button id="hint-button" class="button secondary hint-button" type="button">ヒント1を見る</button>
+          <div id="support-content" class="support-content"></div>
+          <div id="handwriting-mount" class="handwriting-mount"></div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ============ RESULT ============ -->
+    <section id="result-screen" class="screen result-screen" hidden aria-labelledby="result-title">
+      <div class="result-summary">
+        <h1 id="result-title">結果</h1>
+        <p id="result-score" class="result-score"></p>
+        <p id="result-message"></p>
+      </div>
+      <div id="review-list" class="review-list" aria-label="問題の振り返り"></div>
+      <div class="result-actions">
+        <button id="review-button" class="button secondary" type="button">まちがいだけ復習</button>
+        <button id="again-button" class="button primary" type="button">もう一度</button>
+        <button id="result-home-button" class="button muted" type="button">ホームへ</button>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="final-hint-dialog" aria-labelledby="final-hint-title">
+    <h2 id="final-hint-title">⚠️ 次のヒントは答えだよ！</h2>
+    <p>表示すると、この問題は不正解で確定します。</p>
+    <div class="dialog-actions">
+      <button id="cancel-final-hint" class="button muted" type="button">戻る</button>
+      <button id="confirm-final-hint" class="button danger" type="button">答えを見る</button>
+    </div>
+  </dialog>
+
+  <dialog id="clear-history-dialog" aria-labelledby="clear-history-title">
+    <h2 id="clear-history-title">この端末の記録を消します</h2>
+    <p>このアプリの学習の履歴だけを消します。もとに戻せません。</p>
+    <div class="dialog-actions">
+      <button id="cancel-clear-history" class="button muted" type="button">やめる</button>
+      <button id="confirm-clear-history" class="button danger" type="button">消す</button>
+    </div>
+  </dialog>
+
+  <!-- MathLive は head で読み込まない（MathJax と競合して Shadow DOM が壊れる） -->
+  <script src="https://unpkg.com/mathlive@0.98.4/dist/mathlive.min.js"></script>
+  <script src="handwriting-overlay.js"></script>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

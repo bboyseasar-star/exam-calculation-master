@@ -1,0 +1,15 @@
+# 社内記録・検証物（公開しない）
+_削除OK/
+ANSWER_QA.md
+LEGAL_REVIEW.md
+SPEC.md
+START_PROMPT.md
+tests.mjs
+package.json
+
+# 作業環境の副産物
+.DS_Store
+.codex/
+.claude/
+.agents/
+node_modules/

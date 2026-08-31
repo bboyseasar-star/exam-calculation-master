@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>このアプリについて｜👹 高校入試対策シリーズ ～入試基本計算～</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.legal-body{overflow:hidden}
+.legal-page{height:100dvh;max-width:920px;margin:auto;padding:clamp(18px,4vh,42px);display:flex;flex-direction:column;gap:16px}
+.legal-page h1{margin:0;font-size:clamp(1.3rem,3.2vh,1.8rem)}
+.tabs{display:flex;gap:8px;flex:0 0 auto}
+.tab{border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 14px;min-height:44px}
+.tab[aria-selected="true"]{background:var(--primary);color:#fff;border-color:var(--primary)}
+.tab-panel{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;overflow:auto;min-height:0;flex:1;line-height:1.75}
+.tab-panel h2:first-child{margin-top:0}
+.tab-panel h2{font-size:1.05rem}
+.tab-panel pre{font-family:ui-monospace,monospace;white-space:pre-wrap;line-height:1.45;font-size:.86rem}
+.legal-page .about-link{align-self:flex-start;display:inline-flex;align-items:center;min-height:44px}
+@media(max-width:760px){.legal-body{overflow:auto}.legal-page{height:auto;min-height:100dvh}.tab-panel{overflow:visible}}
+</style>
+</head>
+<body class="legal-body">
+<main class="legal-page">
+  <a class="about-link" href="./">← ホーム画面に戻る</a>
+  <h1>このアプリについて</h1>
+
+  <div class="tabs" role="tablist" aria-label="アプリ情報">
+    <button class="tab" id="terms-tab" role="tab" aria-selected="true" aria-controls="terms-panel" type="button">利用条件・出典・プライバシー</button>
+    <button class="tab" id="license-tab" role="tab" aria-selected="false" aria-controls="license-panel" type="button">ライセンス</button>
+  </div>
+
+  <section id="terms-panel" class="tab-panel" role="tabpanel" aria-labelledby="terms-tab">
+    <h2>このアプリについて</h2>
+    <p>沖縄県立高校入試数学の大問1で扱われる一般的な基本計算（正負の数、分数、計算の順序、平方根、単項式、文字式の整理）の問題構造を参考に、独自に作成した問題を出します。1セット10問で、10問中9問以上でクリアです。</p>
+    <p>過去問の問題文、図、解説、選択肢、固有の数値配置は転載していません。問題文・数値・ヒント・解説は、内部の乱数の種（seed）から決定的に生成される独自制作物です。数学上の事実、定理、公式、一般的な用語、定型的な問題形式について、作成者は独占的な権利を主張しません。</p>
+    <p>クリアの目安（9問以上）は練習上の目安であり、実際の入試の得点や合否を予測するものではありません。</p>
+
+    <h2>保存する情報</h2>
+    <p>この端末の中（ブラウザのlocalStorage）に、次の情報だけを保存します。</p>
+    <ul>
+      <li>最高スコア</li>
+      <li>学習の履歴（日時・得点・クリア／挑戦中／中断、最大20件）</li>
+      <li>直前のセットで間違えた問題を復習するための情報（問題の番号・種類・seed）</li>
+      <li>次のセットで同じ出題型が続かないようにする、直前セットの出題型</li>
+    </ul>
+    <p>氏名、学校名、学年、学籍番号などの個人情報は集めません。学習の記録を外部のサーバーへ送ることもありません。アプリの中に外部送信のしくみはありません。</p>
+    <p>ホーム画面の「この端末の記録を消す」を押すと、確認のうえ、このアプリの記録だけを消します。ほかのアプリやほかのコースの記録は消しません。手書きメモの内容はどこにも保存せず、次の問題へ進むと消えます。採点にも使いません。</p>
+
+    <h2>外部への接続</h2>
+    <p>数式の表示・入力と文字の表示のため、最初に開いたときだけ次の配信元へ接続します。</p>
+    <ul>
+      <li>MathJax（jsDelivr） — 数式の表示</li>
+      <li>MathLive（unpkg） — 数式の入力</li>
+      <li>Google Fonts — 文字（BIZ UDPGothic / Outfit）</li>
+    </ul>
+    <p>これらの配信元には、ふつうのWebアクセスと同じようにIPアドレスやブラウザの種類が伝わります。解答の内容や学習の記録は送られません。</p>
+
+    <h2>第三者コンポーネント</h2>
+    <ul>
+      <li>MathJax — Apache-2.0（MathJax Consortium）</li>
+      <li>MathLive — MIT License（CortexJS）</li>
+      <li>BIZ UDPGothic — SIL Open Font License 1.1</li>
+      <li>Outfit — SIL Open Font License 1.1</li>
+    </ul>
+    <p>これらはそれぞれの権利者に帰属し、このアプリのMIT Licenseで上書きされません。同梱の手書きメモ部品は作成者の自作で、第三者のコードを含みません。</p>
+
+    <h2>問題文・ヒント・解説の再利用</h2>
+    <p>作成者が著作権その他の必要な権利を有する部分に限り、<a href="https://creativecommons.org/licenses/by/4.0/">クリエイティブ・コモンズ表示 4.0 国際（CC BY 4.0）</a>で利用できます。第三者が権利を有する部分、数学上の事実・定理・公式・一般的な用語・定型的な問題形式、入試問題そのものや他者の教材に由来する表現は、この許諾範囲に含まれません。</p>
+
+    <h2>AI利用について</h2>
+    <p>実装にはAI支援を利用しています。問題構成、ヒント、解説、プログラムのうち、作成者が必要な権利を有する部分に限って上記のライセンスを適用します。AI生成物を含むアプリ全体について、無条件の権利帰属は主張しません。</p>
+    <p>教育利用時の連絡は不要です。改善案の共有は任意です。利用による損害について、作成者は責任を負いません。</p>
+  </section>
+
+  <section id="license-panel" class="tab-panel" role="tabpanel" aria-labelledby="license-tab" hidden>
+    <h2>MIT License</h2>
+    <p>独自プログラム部分のライセンスです。正式な条件は次の英語本文です。著作権表示と許諾表示を残す条件で、利用・複製・改変・配布などを広く許可します。</p>
+    <pre>MIT License
+
+Copyright (c) 2026 bboyseasar
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.</pre>
+  </section>
+
+  <a class="about-link" href="./">← ホーム画面に戻る</a>
+</main>
+<script>
+document.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
+  document.querySelectorAll('[role=tab]').forEach(b => b.setAttribute('aria-selected', String(b === tab)));
+  document.querySelectorAll('[role=tabpanel]').forEach(p => { p.hidden = p.getAttribute('aria-labelledby') !== tab.id; });
+}));
+</script>
+</body>
+</html>
