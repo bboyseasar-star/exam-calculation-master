@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="沖縄県立高校入試数学の大問1に向けた、入試基本計算の練習アプリです。">
   <title>👹 高校入試対策シリーズ ～入試基本計算～</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20261024c">
   <script>
     // require / html / textmacros を外す。生徒の入力を含む数式から \href 等が実行される経路を作らない。
     window.MathJax = {
@@ -63,8 +63,8 @@
             <label for="answer-field">答え</label>
             <div class="answer-row">
               <div class="math-field-wrap mathjax-ignore">
-                <math-field id="answer-field" math-virtual-keyboard-policy="manual"
-                            virtual-keyboard-mode="off" inputmode="latin" aria-label="答えの式"></math-field>
+                <math-field id="answer-field" math-virtual-keyboard-policy="auto"
+                            inputmode="latin" aria-label="答えの式"></math-field>
               </div>
               <!-- 単位は入力欄の一部ではなく、隣に置くラベル。単位のない問題でも幅は確保する -->
               <span id="unit-label" class="unit-label is-empty" aria-hidden="true"></span>
@@ -130,7 +130,7 @@
 
   <!-- MathLive は head で読み込まない（MathJax と競合して Shadow DOM が壊れる） -->
   <script src="https://unpkg.com/mathlive@0.98.4/dist/mathlive.min.js"></script>
-  <script src="handwriting-overlay.js"></script>
-  <script type="module" src="main.js"></script>
+  <script src="handwriting-overlay.js?v=20261024c"></script>
+  <script type="module" src="main.js?v=20261024c"></script>
 </body>
 </html>

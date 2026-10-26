@@ -1,9 +1,7 @@
 /*!
  * handwriting-overlay.js — クイズ画面全体の手書きレイヤー
  *
- * 出典: システム開発部/drill-apps/中学２年生/第３章/鬼リピ/oniripi-kouten/main.js の
- *       initWriting()（「クイズ画面全体の手書き（Canvas 2D + Pointer Events）」）を部品化したもの。
- *       高校入試対策シリーズ simultaneous-equations-master への移植で得た知見を反映済み。
+ * 作成者の別の数学ドリルで使っている「クイズ画面全体の手書き（Canvas 2D + Pointer Events）」を部品化したもの。
  *
  * 仕組みの要点（触る前に読むこと）:
  *   1. canvas は pointer-events:none の全画面固定。当たり判定を持たせない。

@@ -10,9 +10,9 @@
 import {
   COURSE_ID, SET_SIZE, CLEAR_THRESHOLD, SCHEMA_VERSION, RNG_VERSION,
   generateSet, generateReviewQuestion, deriveSeed, promptSummary
-} from './questions.js';
+} from './questions.js?v=20261024c';
 
-import { judge } from './domain-judge.js';
+import { judge, consumes } from './domain-judge.js?v=20261024c';   // questions.js と同じ URL（違うと二重に読み込まれる）
 
 /* ============================================================
  * 保存（このアプリの2キーだけを扱う）
@@ -99,7 +99,7 @@ const $ = id => document.getElementById(id);
 let handwriting = null;
 let scrollHint = null;
 let overflowHint = null;
-const NEXT_LOCK_MS = 250;      // M-4: 採点直後にキーで読み飛ばさないための無効時間
+const NEXT_LOCK_MS = 500;      // M-4: 採点直後に「次へ」を受け付けない時間（Enter の連打・長押しで解説を読み飛ばさない）
 const AUTO_NEXT_MS = 1000;     // 正解の演出を見せてから次の問題へ送るまで
 const BADGE_HIDE_MS = 1200;    // 不正解などで演出を消すまで（解説の邪魔をしない）
 let autoNextTimer = null;
@@ -168,19 +168,154 @@ function setupMathField() {
       field.smartMode = false;          // 連続した文字が \mathrm 化されるのを止める
       field.smartFence = false;
       field.inlineShortcuts = {};
-      field.mathVirtualKeyboardPolicy = 'manual';
+      // スペースキーの空白を \\: として残す（-2 5 が 25 に化けて採点されないように。採点で「書きかけ」にする）
+      field.mathModeSpace = '\\:';
+      // manual はタッチだけの端末で入力できなくなるので使わない（シリーズ共通の決まり）
+      field.mathVirtualKeyboardPolicy = 'auto';
     } catch { /* 属性側の指定で足りる */ }
   };
   apply();
   if (window.customElements && customElements.whenDefined) {
     customElements.whenDefined('math-field').then(apply).catch(() => {});
   }
-  // Chromebook の IME 対策。UIで漏れてもパーサ側でも正規化する二重防御。
-  field.addEventListener('compositionend', () => {
-    const latex = answerLatex();
-    const normalized = latex.normalize('NFKC').replace(/[−‐‑–—―ー]/g, '-');
-    if (normalized !== latex) { try { field.value = normalized; } catch { /* 続行 */ } }
+  // 全角・上付き数字（ａ³・x²）は欄へ書き戻さない。採点のときに domain-judge.js がそろえて読む。
+  // （書き戻すと NFKC で a³ が a3 に化けていた）
+  installSqrtImeFix(field);
+
+  // 採点後（FEEDBACK）に何かの拍子で欄へフォーカスが戻ったら（入力補助ボタンのあとの遅れたフォーカスなど）、
+  // 欄から外して「次へ」へ移す。read-only の欄が Enter を吸って「次へ」に進めなくなるのを防ぐ。
+  field.addEventListener('focusin', () => {
+    if (session.screen !== 'QUESTION' || session.phase === 'INPUT') return;
+    try { field.blur(); } catch { /* 続行 */ }
+    focusNextButton();
   });
+
+  bindMathFieldSubmit(field, () => {
+    if (session.screen !== 'QUESTION' || session.phase !== 'INPUT') return;
+    if (document.querySelector('dialog[open]')) return;
+    submit();
+  });
+  followVirtualKeyboard(() => [
+    document.querySelector('.answer-area'),
+    document.querySelector('#verdict-badge:not([hidden])'),
+    document.querySelector('.answer-actions')
+  ]);
+}
+
+/* ------------------------------------------------------------
+ * 決定と仮想キーボード（大問2シリーズ8本でそろえる小さな部品。linear-equation-master の手本を写した）
+ * ---------------------------------------------------------- */
+
+/**
+ * 入力欄の「決定」を、実キーの Enter と、仮想キーボードの ↵（MathLive の change）の両方で受ける。
+ *   実キー: 欄の keydown を capture で受け、!isComposing && keyCode!==229 && !repeat のときだけ（IME の確定では決定しない）。
+ *   ↵: keydown を出さないので change で拾う。change は欄からフォーカスが外れたときにも出るので、欄にフォーカスがあるときだけ。
+ * 同じ操作で両方が来ても、400ms 以内の2回目は無視して二重採点を防ぐ。欄ごとに1回だけ。
+ */
+function bindMathFieldSubmit(field, onSubmit) {
+  if (!field || field.dataset.submitBound) return;
+  field.dataset.submitBound = '1';
+  let last = 0;
+  const fire = () => { const now = Date.now(); if (now - last < 400) return; last = now; onSubmit(); };
+  field.addEventListener('keydown', event => {
+    if (event.key !== 'Enter') return;
+    if (event.isComposing || event.keyCode === 229) return;
+    // 解説を出している間（FEEDBACK）は document の「次へ」に任せる
+    if (session.screen !== 'QUESTION' || session.phase !== 'INPUT') return;
+    event.preventDefault();
+    event.stopPropagation();                        // document の Enter（次へ）と二重にしない
+    if (event.repeat) return;                       // 長押し（キーリピート）では動かさない
+    fire();
+  }, true);
+  field.addEventListener('change', () => {
+    const focused = typeof field.hasFocus === 'function' ? field.hasFocus() : document.activeElement === field;
+    if (focused) fire();
+  });
+}
+
+/**
+ * 仮想キーボードが出ている間は、<html> に vk-open と --vk-height を付けて高さ固定をゆるめ（CSS 側）、
+ * getTargets() が返す要素（入力欄・判定・決定ボタン）がキーボードの上に見えるようにスクロールする。閉じたら先頭へ戻す。
+ */
+function followVirtualKeyboard(getTargets) {
+  const vk = window.mathVirtualKeyboard;
+  if (!vk || followVirtualKeyboard.bound) return;
+  followVirtualKeyboard.bound = true;
+  followVirtualKeyboard.getTargets = getTargets;
+  const update = () => {
+    const h = Math.round((vk.boundingRect && vk.boundingRect.height) || 0);
+    const open = vk.visible !== false && h > 0;
+    const root = document.documentElement;
+    const was = root.classList.contains('vk-open');
+    root.classList.toggle('vk-open', open);
+    root.style.setProperty('--vk-height', `${open ? h : 0}px`);
+    if (!open) { if (was) window.scrollTo(0, 0); return; }
+    requestAnimationFrame(() => {
+      const els = (followVirtualKeyboard.getTargets() || []).filter(Boolean);
+      if (!els.length) return;
+      const rects = els.map(e => e.getBoundingClientRect());
+      const top = Math.min(...rects.map(r => r.top));
+      const bottom = Math.max(...rects.map(r => r.bottom));
+      const visibleBottom = window.innerHeight - h - 8;
+      let dy = 0;
+      if (bottom > visibleBottom) dy = bottom - visibleBottom;
+      if (top - dy < 8) dy = top - 8;
+      if (dy) window.scrollBy(0, dy);
+    });
+  };
+  vk.addEventListener('geometrychange', update);
+  // MathLive 0.98.4 では、出したときに geometrychange が来ず virtual-keyboard-toggle だけが来ることがある
+  vk.addEventListener('virtual-keyboard-toggle', update);
+  window.addEventListener('resize', update);
+  followVirtualKeyboard.update = update;
+}
+
+/* ------------------------------------------------------------
+ * IME の √ 対策（平方根・二次方程式のドリルにも同じものを写す）
+ *
+ * 全角のまま「２るーと３」を変換して「２√３」を1回で確定すると、MathLive 0.98.4 は
+ * 欄を \sqrt{２\surd３} に変えてしまう（決定しても読めない）。
+ * 確定した文字列に √ が含まれ2文字以上のときだけ、MathLive の既定の処理を止めて、
+ * 半角にした LaTeX（2\sqrt{3}）を入れ直す。√ を含まない確定（ａ³・ｘ²・－４８）には一切手を出さない。
+ * ---------------------------------------------------------- */
+const IME_SUPERSCRIPT = { '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9' };
+
+/** 「２√３」→「2\sqrt{3}」。√ の直後の数（小数可）・文字1つ・(...) だけを根号の中にする。読めない文字があれば null。 */
+function imeSqrtToLatex(text) {
+  let s = String(text).replace(/[⁰¹²³⁴-⁹]+/g, m => `^{${[...m].map(c => IME_SUPERSCRIPT[c]).join('')}}`);
+  // 空白を消してから × を置きかえる（\times の後ろの空白まで消すと、最後の照合に通らない）
+  s = s.normalize('NFKC').replace(/[−‐‑‒–—―ー]/g, '-').replace(/\s+/g, '')
+    .replace(/[×✕]/g, '\\times ').replace(/[・･·⋅]/g, '\\cdot ');   // 中点（・ ･ · ⋅）はかけ算の記号
+  s = s.replace(/√(\(([^()]*)\)|\d+(?:\.\d+)?|[A-Za-z])?/g, (_, all, inner) =>
+    `\\sqrt{${all === undefined ? '#?' : (inner !== undefined ? inner : all)}}`);
+  return /^(?:[0-9A-Za-z.+\-*/()=^{}#?]|\\sqrt|\\times |\\cdot )*$/.test(s) ? s : null;
+}
+
+function installSqrtImeFix(field) {
+  let replaying = false;
+  field.addEventListener('compositionend', event => {
+    if (replaying) return;
+    const text = event.data;
+    if (typeof text !== 'string' || text.length < 2 || !text.includes('√')) return;
+    const latex = imeSqrtToLatex(text);
+    if (latex === null) return;
+    event.stopImmediatePropagation();          // MathLive の既定の挿入（\sqrt{２\surd３} になる）を止める
+    event.preventDefault();
+    // MathLive の「変換中」の状態は終わらせる（止めたままだと、その後のキー入力を受け付けなくなる）。
+    // 中身の無い compositionend を同じ要素へ送り直す。
+    const sink = event.composedPath()[0];
+    replaying = true;
+    try {
+      if (sink && sink.dispatchEvent) {
+        if ('textContent' in sink) sink.textContent = '';
+        sink.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, composed: true, data: '' }));
+      }
+    } catch { /* 続行 */ } finally { replaying = false; }
+    // 「２√」のように根号の中が空のときは、カーソルを根号の枠の中に置く（続けて打った 3 が根号の中に入る）
+    const options = { selectionMode: latex.includes('#?') ? 'placeholder' : 'after', focus: true };
+    try { field.insert(latex, options); }
+    catch { try { field.executeCommand(['insert', latex, options]); } catch { /* 続行 */ } }
+  }, true);
 }
 
 function setFieldLocked(locked) {
@@ -192,18 +327,39 @@ function setFieldLocked(locked) {
   } catch { /* 続行 */ }
 }
 
+/** 入力中（INPUT）でロックしていないときだけ欄にフォーカスを入れる。遅れて走っても、採点後の欄には戻さない。 */
 function focusField() {
-  requestAnimationFrame(() => { try { mathField().focus(); } catch { /* 続行 */ } });
+  requestAnimationFrame(() => {
+    if (session.screen !== 'QUESTION' || session.phase !== 'INPUT') return;
+    const field = mathField();
+    if (!field || field.readOnly || field.hasAttribute('read-only')) return;
+    try { field.focus(); } catch { /* 続行 */ }
+  });
 }
 
+/** 採点後は「次へ」にフォーカスを移す（実キーの Enter が欄に吸われないように）。 */
+function focusNextButton() {
+  const button = $('next-button');
+  if (!button || button.hidden || button.disabled) return;
+  try { button.focus({ preventScroll: true }); } catch { /* 続行 */ }
+}
+
+/** √・分数・指数は枠を入れて、カーソルを枠の中へ置く（selectionMode: 'placeholder'） */
 function insertToField(text) {
+  if (session.screen !== 'QUESTION' || session.phase !== 'INPUT') return;
   const field = mathField();
-  try { field.executeCommand(['insert', text]); }
-  catch { try { field.insert(text); } catch { /* 続行 */ } }
+  const options = { selectionMode: 'placeholder', focus: true };
+  try {
+    if (typeof field.insert === 'function') field.insert(text, options);
+    else field.executeCommand(['insert', text, options]);
+  } catch {
+    try { field.executeCommand(['insert', text, options]); } catch { /* 続行 */ }
+  }
   focusField();
 }
 
 function runFieldCommand(command) {
+  if (session.screen !== 'QUESTION' || session.phase !== 'INPUT') return;
   const field = mathField();
   try { field.executeCommand(command); } catch { /* 続行 */ }
   focusField();
@@ -306,7 +462,7 @@ function startReview() {
 }
 
 function newItem(question) {
-  return { question, hintLevel: 0, status: null, valueCorrect: false, raw: '', studentLatex: null, code: null };
+  return { question, hintLevel: 0, status: null, kind: null, valueCorrect: false, raw: '', studentLatex: null, code: null };
 }
 
 function currentItem() { return session.items[session.index]; }
@@ -316,8 +472,8 @@ function currentItem() { return session.items[session.index]; }
  * ========================================================== */
 
 const KEYPAD_BASE = [
-  { label: '√', insert: '\\sqrt{#?}' },
-  { label: '分数', insert: '\\frac{#?}{#?}' },
+  { label: '√', insert: '\\sqrt{#0}' },
+  { label: '分数', insert: '\\frac{#0}{#?}' },
   { label: '指数', insert: '^{#?}' },
   { label: '＋', insert: '+' },
   { label: '−', insert: '-' },
@@ -384,7 +540,7 @@ function hideVerdict() {
   $('verdict-mark').textContent = '';
   $('verdict-text').textContent = '';
   const wrap = document.querySelector('.math-field-wrap');
-  wrap.classList.remove('is-correct', 'is-incorrect', 'is-form');
+  wrap.classList.remove('is-correct', 'is-incorrect', 'is-unfinished', 'is-notation', 'is-negden');
 }
 
 /**
@@ -400,13 +556,15 @@ function showVerdict(kind, mark, text) {
   // アニメーションを問題ごとに必ず再生させる
   badge.getAnimations?.().forEach(a => a.cancel());
   for (const child of badge.children) child.getAnimations?.().forEach(a => { a.cancel(); a.play(); });
-  document.querySelector('.math-field-wrap').classList.add(
-    kind === 'correct' ? 'is-correct' : kind === 'form' ? 'is-form' : 'is-incorrect');
+  document.querySelector('.math-field-wrap').classList.add(`is-${kind}`);
 }
 
 function renderQuestion() {
   const item = currentItem();
   const question = item.question;
+
+  // 前の問題の欄を先に外す（古いフォーカスと新しい問題の切り替えが重ならないように）
+  try { mathField().blur(); } catch { /* 続行 */ }
 
   $('mode-note').hidden = session.mode !== 'review';
   $('progress-label').textContent = `Q ${session.index + 1} / ${session.items.length}`;
@@ -445,7 +603,9 @@ function renderQuestion() {
 
   typeset($('question-screen').querySelector('.question-card'));
   typeset(support);
+  window.scrollTo(0, 0);
   focusField();
+  if (followVirtualKeyboard.update) followVirtualKeyboard.update();
 }
 
 function appendMath(target, latex, className = 'math-line') {
@@ -519,17 +679,18 @@ function submit() {
   const raw = answerLatex();
   const verdict = judge(raw, item.question);
 
-  if (verdict.status === 'INVALID_INPUT') {
-    // 答えとして読めない入力は「1回の提出」に数えない。書き直させる。
+  if (!consumes(verdict)) {
+    // 空欄・答えとして読めない入力は「1回の提出」に数えない（採点・記録・ロックしない）。書き直させる。
     const support = $('support-content');
     support.replaceChildren();
     const p = document.createElement('p');
     p.className = 'feedback warn';
-    p.textContent = 'まだ答えとして読み取れません';
+    p.textContent = verdict.status === 'empty' ? 'まだ答えが入っていません' : 'まだ答えとして読み取れません';
     support.append(p);
     appendNote(support, verdict.message || '式の書き方を確かめよう。');
     typeset(support);
     focusField();
+    if (followVirtualKeyboard.update) followVirtualKeyboard.update();
     return;
   }
   finishQuestion(verdict, raw);
@@ -538,9 +699,11 @@ function submit() {
 function finishQuestion(verdict, raw) {
   const item = currentItem();
   const question = item.question;
-  const correct = verdict.status === 'CORRECT';
+  const correct = verdict.status === 'correct';
+  const view = verdictView(verdict);
 
   item.status = verdict.status;
+  item.kind = verdict.kind || null;
   item.valueCorrect = Boolean(verdict.valueCorrect);
   item.raw = raw;
   item.studentLatex = verdict.studentLatex || null;
@@ -555,18 +718,17 @@ function finishQuestion(verdict, raw) {
   $('hint-button').disabled = true;
   setKeypadDisabled(true);
   setFieldLocked(true);
+  focusNextButton();
 
   clearAutoNext();
   if (correct) {
-    showVerdict('correct', '◯', '正解！');
+    showVerdict(view.badge, view.mark, view.text);
     // 正解のときは解説を読ませる必要がないので、演出を見せてから自動で次へ送る
     session.autoAdvancing = true;
     $('next-button').disabled = true;
     autoNextTimer = setTimeout(() => { autoNextTimer = null; advance(); }, AUTO_NEXT_MS);
   } else {
-    if (verdict.status === 'FORM_ERROR') showVerdict('form', '△', 'あと一歩！');
-    else if (verdict.status === 'GIVE_UP') showVerdict('incorrect', '×', '答えを確認しよう');
-    else showVerdict('incorrect', '×', 'もう一度確認しよう');
+    showVerdict(view.badge, view.mark, view.text);
     // 不正解・形式エラー・ギブアップは自動で送らない（解説を読む必要があるため）
     badgeTimer = setTimeout(() => { badgeTimer = null; $('verdict-badge').hidden = true; }, BADGE_HIDE_MS);
   }
@@ -577,16 +739,14 @@ function finishQuestion(verdict, raw) {
   support.replaceChildren();
 
   const title = document.createElement('p');
-  if (correct) { title.className = 'feedback good'; title.textContent = '正解！'; }
-  else if (verdict.status === 'FORM_ERROR') { title.className = 'feedback warn'; title.textContent = 'おしい！値は合っています'; }
-  else if (verdict.status === 'GIVE_UP') { title.className = 'feedback bad'; title.textContent = '答えを確認しました'; }
-  else { title.className = 'feedback bad'; title.textContent = 'ここを確認しよう'; }
+  title.className = `feedback ${view.titleClass}`;
+  title.textContent = view.title;
   support.append(title);
 
   if (correct) {
     appendNote(support, '値も答えの形も正しく書けたね。');
   } else {
-    appendLabel(support, verdict.status === 'FORM_ERROR' ? 'あなたが書いた形' : 'あなたの答え');
+    appendLabel(support, verdict.valueCorrect ? 'あなたが書いた形' : 'あなたの答え');
     if (item.studentLatex) {
       // 生の入力は typeset しない。読み取れた式だけを組み直して表示する。
       appendMath(support, item.studentLatex);
@@ -597,12 +757,12 @@ function finishQuestion(verdict, raw) {
       support.append(plain);
     }
 
-    appendLabel(support, verdict.status === 'FORM_ERROR' ? '整理した答えの形' : '正しい答え');
+    appendLabel(support, verdict.valueCorrect ? '整理した答えの形' : '正しい答え');
     appendMath(support, question.answerLatex);
 
-    appendLabel(support, '考えられる原因');
+    appendLabel(support, verdict.valueCorrect ? '直すところ' : '考えられる原因');
     appendNote(support, verdict.status === 'GIVE_UP'
-      ? 'ヒント3を開いたので、この問題は不正解として記録します。'
+      ? '答えを見たので、この問題は不正解として記録します。'
       : (verdict.message || '式の書き方を確かめよう。'));
 
     // 「次の注意」はいちばん持ち帰ってほしい一文なので、背の高い解説より前に置く
@@ -617,10 +777,38 @@ function finishQuestion(verdict, raw) {
   }
 
   typeset(support);
+  if (followVirtualKeyboard.update) followVirtualKeyboard.update();
+}
+
+/**
+ * 判定ごとの見せ方。色だけに意味を持たせず、記号と文言でも区別する。
+ *   ○ 正解（緑）／△ 分母のマイナス（青。0点）／× あと一歩＝途中（橙）／× 書き方（紫）／× 値の誤り（赤）
+ */
+function verdictView(verdict) {
+  switch (verdict.status) {
+    case 'correct':
+      return { badge: 'correct', mark: '◯', text: '正解', title: '○ 正解', titleClass: 'good', review: 'correct', head: '○ 正解' };
+    case 'negDenominator':
+      return { badge: 'negden', mark: '△', text: '書き直そう', title: '△ 書き直そう（値は合っているけれど、正解には数えません）', titleClass: 'negden', review: 'negden', head: '△ 書き直そう（正解に数えない）' };
+    case 'notReduced':
+      return verdict.kind === 'notation'
+        ? { badge: 'notation', mark: '×', text: '不正解（書き方）', title: '× 不正解（書き方）', titleClass: 'notation', review: 'notation', head: '× 不正解（書き方）' }
+        : { badge: 'unfinished', mark: '×', text: '不正解（あと一歩）', title: '× 不正解（あと一歩）', titleClass: 'unfinished', review: 'unfinished', head: '× 不正解（あと一歩）' };
+    case 'GIVE_UP':
+      return { badge: 'incorrect', mark: '×', text: '不正解', title: '× 不正解（答えを確認しました）', titleClass: 'bad', review: 'incorrect', head: '× 不正解' };
+    default:
+      return { badge: 'incorrect', mark: '×', text: '不正解', title: '× 不正解', titleClass: 'bad', review: 'incorrect', head: '× 不正解' };
+  }
 }
 
 function nextTimeNote(item, verdict) {
-  if (verdict.status === 'FORM_ERROR') {
+  if (verdict.status === 'negDenominator') {
+    return '次は、マイナスを分母に書かず、分子か分数の前に書く。';
+  }
+  if (verdict.status === 'notReduced' && verdict.kind === 'notation') {
+    return '次は、決定を押す前に「答えの書き方の決まり」（問題の指示・1や×の省略・文字の順など）に合っているかを確かめる。';
+  }
+  if (verdict.status === 'notReduced') {
     return '次は「これ以上簡単にできないか」を、決定を押す前に1回だけ確かめる。';
   }
   const tag = item.question.subskillTag;
@@ -639,6 +827,7 @@ function nextTimeNote(item, verdict) {
 function next() {
   if (session.screen !== 'QUESTION' || session.phase !== 'FEEDBACK') return;
   if (session.autoAdvancing) return;
+  if (nextLocked()) return;                          // 採点から 500ms は受け付けない
   advance();
 }
 
@@ -671,7 +860,7 @@ function finishSet() {
   hideVerdict();
   // 次のラウンドの母集団は「このラウンドで間違えたもの」。通常・復習で共通。
   session.reviewQueue = session.items
-    .filter(item => item.status !== 'CORRECT')
+    .filter(item => item.status !== 'correct')
     .map(item => ({
       seed: item.question.seed,
       slotIndex: item.question.slotIndex,
@@ -728,12 +917,11 @@ function renderResult() {
   list.replaceChildren();
   session.items.forEach((item, index) => {
     const card = document.createElement('article');
-    const state = item.status === 'CORRECT' ? 'correct' : item.status === 'FORM_ERROR' ? 'form-error' : 'incorrect';
-    card.className = `review-item ${state}`;
+    const view = verdictView({ status: item.status, kind: item.kind });
+    card.className = `review-item ${view.review}`;
 
     const heading = document.createElement('h2');
-    heading.textContent = `Q${index + 1}　${item.status === 'CORRECT' ? '○ 正解'
-      : item.status === 'FORM_ERROR' ? '△ 形の整理' : '× 確認'}`;
+    heading.textContent = `Q${index + 1}　${view.head}`;
     card.append(heading);
 
     const prompt = document.createElement('p');
@@ -769,7 +957,9 @@ function setupHandwriting() {
       // ペンONの間はスクロール領域を指でスクロールできなくなるが、これは承知のうえの仕様。
       // （ペンOFFのときは描画レイヤーがイベントを奪わないので、これまでどおりスクロールできる）
       controlSelector: 'button,math-field,input,textarea,select,a,[role="button"],label,'
-        + '.math-field-wrap,.keypad,.hw-bar,dialog',
+        + '.math-field-wrap,.keypad,.hw-bar,dialog,'
+        // 仮想キーボード（MathLive 0.98.4）のキーを押しても手書きの点が付かないように
+        + '.ML__keyboard,.ML__keyboard *,[class^="MLK__"],[class*=" MLK__"]',
       classNames: { button: '' }
     });
     if (handwriting) handwriting.reset(false);
@@ -815,6 +1005,10 @@ function init() {
   $('again-button').addEventListener('click', () => { if (session.screen === 'RESULT') startNormal(); });
   $('review-button').addEventListener('click', () => { if (session.screen === 'RESULT') startReview(); });
 
+  // 入力補助ボタンを押しても欄からフォーカスを奪わない（押した直後の Enter がボタンに行って決定できない、を防ぐ）
+  $('keypad').addEventListener('mousedown', event => {
+    if (event.target.closest('button')) event.preventDefault();
+  });
   // キーパッドは毎問作り直すのでデリゲート（二重登録を作らない）
   $('keypad').addEventListener('click', event => {
     const button = event.target.closest('button[data-insert],button[data-command]');
@@ -824,16 +1018,13 @@ function init() {
     else insertToField(button.dataset.insert);
   });
 
-  // Enter で決定 / 次へ。phase ガードがあるので連打しても飛ばない。
+  // Enter で次へ。決定（INPUT）は入力欄の capture の keydown だけが受け持つ（二重採点を作らない）。
   document.addEventListener('keydown', event => {
-    if (event.key !== 'Enter' || event.isComposing) return;
+    if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return;
     if (event.repeat) return;                       // 長押し（キーリピート）では動かさない
     if (session.screen !== 'QUESTION') return;
     if (document.querySelector('dialog[open]')) return;
-    // イベントの発生元は Element とは限らない（document へ直接届く場合がある）
-    const target = event.target instanceof Element ? event.target : null;
-    if (session.phase === 'INPUT' && target && target.closest('math-field')) { event.preventDefault(); submit(); }
-    else if (session.phase === 'FEEDBACK' && !nextLocked()) { event.preventDefault(); next(); }
+    if (session.phase === 'FEEDBACK' && !nextLocked()) { event.preventDefault(); next(); }
   });
 
   $('support-content').addEventListener('scroll', updateSupportOverflow);

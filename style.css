@@ -15,6 +15,11 @@
   --line: #cbd7d5;
   --danger: #b3261e;
   --good: #087443;
+  /* 判定の区分（色だけでなく記号と文言でも区別する） */
+  --unfinished: #b45309;       /* × あと一歩（途中） */
+  --unfinished-ink: #92400e;
+  --notation: #6d28d9;         /* × 書き方の決まり */
+  --negden: #0369a1;           /* △ 分母のマイナス */
   --font: 'Outfit', 'BIZ UDPGothic', sans-serif;
 }
 
@@ -179,10 +184,14 @@ button:focus-visible, a:focus-visible, math-field:focus-visible {
 .verdict-text { font-size: 1.2rem; font-weight: 700; }
 .verdict-badge.is-correct .verdict-mark { background: var(--good); }
 .verdict-badge.is-incorrect .verdict-mark { background: var(--danger); }
-.verdict-badge.is-form .verdict-mark { background: #b45309; }
+.verdict-badge.is-unfinished .verdict-mark { background: var(--unfinished); }
+.verdict-badge.is-notation .verdict-mark { background: var(--notation); }
+.verdict-badge.is-negden .verdict-mark { background: var(--negden); }
 .verdict-badge.is-correct .verdict-text { color: var(--good); }
 .verdict-badge.is-incorrect .verdict-text { color: var(--danger); }
-.verdict-badge.is-form .verdict-text { color: #92400e; }
+.verdict-badge.is-unfinished .verdict-text { color: var(--unfinished-ink); }
+.verdict-badge.is-notation .verdict-text { color: var(--notation); }
+.verdict-badge.is-negden .verdict-text { color: var(--negden); }
 @keyframes verdict-pop {
   from { transform: scale(.55); opacity: 0; }
   60%  { transform: scale(1.08); opacity: 1; }
@@ -191,7 +200,9 @@ button:focus-visible, a:focus-visible, math-field:focus-visible {
 .verdict-badge > * { animation: verdict-pop .32s ease-out both; }
 .math-field-wrap.is-correct { border-color: var(--good); box-shadow: 0 0 0 3px #08744326; }
 .math-field-wrap.is-incorrect { border-color: var(--danger); box-shadow: 0 0 0 3px #b3261e26; }
-.math-field-wrap.is-form { border-color: #b45309; box-shadow: 0 0 0 3px #b4530926; }
+.math-field-wrap.is-unfinished { border-color: var(--unfinished); box-shadow: 0 0 0 3px #b4530926; }
+.math-field-wrap.is-notation { border-color: var(--notation); box-shadow: 0 0 0 3px #6d28d926; }
+.math-field-wrap.is-negden { border-color: var(--negden); box-shadow: 0 0 0 3px #0369a126; }
 .mode-note {
   margin: 0 0 10px;
   align-self: flex-start;
@@ -320,6 +331,9 @@ math-field::part(menu-toggle), math-field::part(virtual-keyboard-toggle) { displ
 .good { color: var(--good); }
 .bad { color: var(--danger); }
 .warn { color: #92400e; }
+.feedback.unfinished { color: var(--unfinished-ink); }
+.feedback.notation { color: var(--notation); }
+.feedback.negden { color: var(--negden); }
 .feedback-note { margin: 3px 0; line-height: 1.5; font-size: .88rem; }
 .feedback-label { font-weight: 700; color: var(--primary-deep); margin: 7px 0 0; font-size: .8rem; }
 .feedback { margin: 0 0 4px; font-size: 1.05rem; }
@@ -351,7 +365,9 @@ math-field::part(menu-toggle), math-field::part(virtual-keyboard-toggle) { displ
 }
 .correct { border-left: 5px solid var(--good); }
 .incorrect { border-left: 5px solid var(--danger); }
-.form-error { border-left: 5px solid #b45309; }
+.review-item.unfinished { border-left: 5px solid var(--unfinished); }
+.review-item.notation { border-left: 5px solid var(--notation); }
+.review-item.negden { border-left: 5px solid var(--negden); }
 .result-actions { display: flex; gap: 12px; flex: 0 0 auto; }
 .result-actions .button { flex: 1; }
 
@@ -400,4 +416,29 @@ dialog p { margin: 0 0 18px; line-height: 1.6; }
   .button, .progress-bar { transition: none; }
   .button:hover { transform: none; }
   .verdict-badge > * { animation: none; }
+}
+
+/* ---------------- 仮想キーボード ----------------
+ * 仮想キーボードが出ている間（<html class="vk-open">。main.js の followVirtualKeyboard が付ける）は、
+ * 高さ固定（100dvh・overflow:hidden）をゆるめてスクロールできるようにし、入力欄・決定ボタンをキーボードの上に出す。 */
+html.vk-open, html.vk-open body { height: auto; min-height: 100%; overflow: auto; }
+html.vk-open body { padding-bottom: var(--vk-height, 0px); }
+html.vk-open .screen { height: auto; min-height: 100dvh; }
+html.vk-open .work-screen { overflow: visible; }
+html.vk-open .work-layout { flex: 0 0 auto; }
+html.vk-open .support-card { max-height: 70dvh; }
+
+/* 判定の色は、欄にフォーカスが残っていても :focus-within に負けないようにする */
+.math-field-wrap.is-correct:focus-within { border-color: var(--good); box-shadow: 0 0 0 3px #08744326; }
+.math-field-wrap.is-incorrect:focus-within { border-color: var(--danger); box-shadow: 0 0 0 3px #b3261e26; }
+.math-field-wrap.is-unfinished:focus-within { border-color: var(--unfinished); box-shadow: 0 0 0 3px #b4530926; }
+.math-field-wrap.is-notation:focus-within { border-color: var(--notation); box-shadow: 0 0 0 3px #6d28d926; }
+.math-field-wrap.is-negden:focus-within { border-color: var(--negden); box-shadow: 0 0 0 3px #0369a126; }
+
+/* 狭い・縦長の画面（スマホ・縦向きタブレット）：問題カードを縮ませず、解説カードはその下に並べ、中でスクロールさせる */
+@media (max-width: 900px) {
+  .work-screen { height: auto; min-height: 100dvh; overflow: visible; }
+  .work-layout { flex: 0 0 auto; grid-template-rows: auto auto; }
+  .question-card { flex-shrink: 0; overflow: visible; }
+  .support-card { max-height: 75dvh; }
 }

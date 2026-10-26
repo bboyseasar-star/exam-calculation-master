@@ -15,7 +15,7 @@
 import {
   vInt, vRat, vMono, vRadical, vAdd, vSub, vTerm,
   valueKey, canonicalLatex, extractSquare, asRational
-} from './domain-judge.js';
+} from './domain-judge.js?v=20261024c';   // main.js と同じ URL（違うと二重に読み込まれる）
 
 export const COURSE_ID = 'exam-calculation';
 export const RNG_VERSION = 'mulberry32-v1';
@@ -342,7 +342,7 @@ function genSignedAdd2(rng, spec) {
     answer: vInt(value),
     kind: 'rational',
     allowedVariables: [],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [firstStep, String(value)],
     hints: [hint1, hint2],
     misconceptions: {
@@ -412,7 +412,7 @@ function genSignedMix3(rng, spec) {
     answer: vInt(value),
     kind: 'rational',
     allowedVariables: [],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [mid, String(value)],
     hints: [
       'かけ算・わり算は、たし算・ひき算より先に計算するよ。まず先に計算する部分がどこかを見つけよう。',
@@ -471,7 +471,7 @@ function genFractionAddSub(rng, spec) {
     answer: vRat(num, L),
     kind: 'rational',
     allowedVariables: [],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [common, fracLatex(num, L)],
     hints: [
       `分母がちがうので、そのままでは足したり引いたりできない。まず分母を ${L} にそろえよう。`,
@@ -503,7 +503,7 @@ function genFractionWithInt(rng, spec) {
     answer: vRat(num, d),
     kind: 'rational',
     allowedVariables: [],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [common, fracLatex(num, d)],
     hints: [
       `整数も分母 ${d} の分数に直せるよ。同じ分母にそろえてから計算しよう。`,
@@ -546,7 +546,7 @@ function genFractionMulDiv(rng, spec) {
       answer,
       kind: 'rational',
       allowedVariables: [],
-      decimalAllowed: false,
+      decimalAllowed: true,
       steps: [mid, canonicalLatex(answer)],
       hints: [
         '分数でわる計算は、その分数の逆数をかける計算に直せるよ。符号も忘れずに引きつごう。',
@@ -584,7 +584,7 @@ function genFractionMulDiv(rng, spec) {
       answer,
       kind: 'rational',
       allowedVariables: [],
-      decimalAllowed: false,
+      decimalAllowed: true,
       steps: [`\\frac{${a} \\times ${k}}{${b}}`, canonicalLatex(answer)],
       hints: [
         '分数と整数のかけ算では、整数を分子にかけるよ。先に約分できるところを見つけると計算が軽くなる。',
@@ -622,7 +622,7 @@ function genFractionMulDiv(rng, spec) {
     answer,
     kind: 'rational',
     allowedVariables: [],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [`\\frac{${a}\\times ${c}}{${b}\\times ${d}}`, canonicalLatex(answer)],
     hints: [
       '分数どうしのかけ算は、分子は分子どうし、分母は分母どうしをかけるよ。先に約分できるところを探そう。',
@@ -871,7 +871,7 @@ function genMonoPowerOnly(rng, spec) {
     answer,
     kind: 'expression',
     allowedVariables: [variable],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [`\\left(${inner}\\right)\\times\\left(${inner}\\right)`, canonicalLatex(answer)],
     hints: [
       'かっこの外の2乗は、かっこの中の「係数」と「文字」の両方にかかるよ。同じものを2回かけると考えよう。',
@@ -912,7 +912,7 @@ function genMonoMulPower(rng, spec) {
     answer,
     kind: 'expression',
     allowedVariables: [variable],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [mid, canonicalLatex(answer)],
     hints: [
       '先に累乗の部分を計算してから、残りをかけるよ。かっこの外の2乗は係数にも文字にもかかる。',
@@ -964,7 +964,7 @@ function genMonoDiv2(rng, spec) {
     answer,
     kind: 'expression',
     allowedVariables: [v1, v2],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [`\\frac{${nLatex}}{${dLatex}}`, canonicalLatex(answer)],
     hints: [
       'わり算は分数の形に直すと、約分で処理できるよ。わる式を分母に置こう。',
@@ -1022,7 +1022,7 @@ function genMonoMulDiv3(rng, spec) {
     answer,
     kind: 'expression',
     allowedVariables: [v1, v2],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [mid, canonicalLatex(answer)],
     hints: [
       'かけ算とわり算だけの式は、わる式を分母に、かける式を分子に置いた1つの分数にまとめられるよ。',
@@ -1064,7 +1064,7 @@ function genMonoPolyDiv(rng, spec) {
     answer,
     kind: 'expression',
     allowedVariables: [variable],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [`\\frac{${inner}}{${divisor}}`, canonicalLatex(answer)],
     hints: [
       'かっこの中のそれぞれの項を、わる式でわるよ。分数の形にして項ごとに約分しよう。',
@@ -1107,7 +1107,7 @@ function genRadSimplifyAdd(rng, spec) {
       answer,
       kind: 'radical',
       allowedVariables: [],
-      decimalAllowed: false,
+      decimalAllowed: true,
       steps: [mid, canonicalLatex(answer)],
       hints: [
         '根号の中に平方の因数（4, 9, 16, 25）がないか探そう。中を最も簡単にすると、同じ根号どうしになる。',
@@ -1144,7 +1144,7 @@ function genRadSimplifyAdd(rng, spec) {
     answer,
     kind: 'radical',
     allowedVariables: [],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [mid, canonicalLatex(answer)],
     hints: [
       '根号の中を最も簡単にしてから、同じ根号どうしの係数を計算するよ。平方の因数を探そう。',
@@ -1182,7 +1182,7 @@ function genRadProduct(rng, spec) {
     answer,
     kind: 'radical',
     allowedVariables: [],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [mid, canonicalLatex(answer)],
     hints: [
       '根号どうしのかけ算は、中の数どうしをかけて1つの根号にまとめられるよ。まとめたあと平方の因数を外に出そう。',
@@ -1220,7 +1220,7 @@ function genRadQuotient(rng, spec) {
     answer,
     kind: 'radical',
     allowedVariables: [],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [mid, `${radicalLatex(k, ratio)}`],
     hints: [
       '根号どうしのわり算は、中の数どうしをわって1つの根号にまとめられるよ。係数はそのまま残る。',
@@ -1266,7 +1266,7 @@ function genRadRationalize(rng, spec) {
     answer,
     kind: 'radical',
     allowedVariables: [],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [mid, mid2, canonicalLatex(answer)],
     hints: [
       '分母に根号があるままでは、同じ根号どうしをまとめられないよ。分母と分子に同じ数をかけて、分母の根号を消そう。',
@@ -1305,7 +1305,7 @@ function genRadSimplifyAdd3(rng, spec) {
     answer,
     kind: 'radical',
     allowedVariables: [],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [mid, canonicalLatex(answer)],
     hints: [
       '3つの項でも考え方は同じだよ。まず全部の根号の中を最も簡単にして、同じ根号にそろえよう。',
@@ -1354,7 +1354,7 @@ function genExpressionTwoVar(rng, spec) {
     answer,
     kind: 'expression',
     allowedVariables: ['x', 'y'],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [expanded, canonicalLatex(answer)],
     hints: [
       'かっこの外の数は、かっこの中の「すべての項」にかけるよ。とくにうしろのかっこの前の符号に注意しよう。',
@@ -1401,7 +1401,7 @@ function genExpressionOneVar(rng, spec) {
     answer,
     kind: 'expression',
     allowedVariables: ['x'],
-    decimalAllowed: false,
+    decimalAllowed: true,
     steps: [expanded, canonicalLatex(answer)],
     hints: [
       'かっこの外の数は、かっこの中の「すべての項」にかけるよ。うしろのかっこの前が「−」のときは、中の符号がすべて変わる。',
@@ -1478,8 +1478,6 @@ export function promptSummary(question) {
 function buildQuestion(built, spec, slotIndex, questionSeed, retryIndex) {
   const answerLatex = built.answerLatex || canonicalLatex(built.answer);
   const answerKey = valueKey(built.answer);
-  const answerRational = asRational(built.answer);
-  const answerIsInteger = Boolean(answerRational && answerRational.d === 1n);
 
   const matchers = {};
   const usedKeys = new Set([answerKey]);
@@ -1527,7 +1525,8 @@ function buildQuestion(built, spec, slotIndex, questionSeed, retryIndex) {
       canonicalValue: built.answer,
       canonicalLatex: answerLatex,
       formPolicy: {
-        decimalAllowed: Boolean(built.decimalAllowed) || answerIsInteger,
+        // 等しい小数（2.0・0.5x・\frac{9}{4} に 2.25）は○（決定 2026-10-23。有理数で厳密に比べる）
+        decimalAllowed: true,
         decimalRequired: Boolean(built.decimalRequired),
         requireReducedFraction: true,
         requirePositiveDenominator: true,

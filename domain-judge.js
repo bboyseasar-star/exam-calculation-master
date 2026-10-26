@@ -294,26 +294,39 @@ export function canonicalLatex(value) {
  * 4. 前処理とトークナイザ
  * ========================================================== */
 
-const SUPERSCRIPT_CHARS = /[⁰¹²³⁴⁵⁶⁷⁸⁹]/;
+const SUPERSCRIPT_DIGITS = { '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4',
+  '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9' };
+const SUPERSCRIPT_RUN = /[⁰¹²³⁴-⁹]+/g;
 const INVISIBLE_CHARS = /[​-‍⁠﻿]/;
+
+/** 空欄（何も書いていない・空の枠だけ）なら true。採点せず、提出にも数えない。 */
+export function isBlank(source) {
+  if (source == null) return true;
+  const s = String(source).replace(/[​-‍⁠﻿]/g, '')
+    .replace(/\\placeholder(?![A-Za-z])\s*(?:\[[^\]]*\])?\s*(?:\{[^{}]*\})?/g, '')
+    .replace(/\\(?:left|right|frac|dfrac|tfrac|sqrt)(?![A-Za-z])/g, '')
+    .replace(/\\[,;:! ]|\\q?quad(?![A-Za-z])/g, '')
+    .replace(/[\s　(){}[\]（）]/g, '');
+  return s === '';
+}
 
 function preprocess(source) {
   const raw = String(source);
 
-  // NFKC は「²」を「2」へ潰してしまう（4⁴ が 44、a³ が a3 に化ける）。
-  // 値が黙って別物になるので、正規化の前に検出して明示的に拒否する。
-  if (SUPERSCRIPT_CHARS.test(raw)) {
-    throw new AnswerError('SUPERSCRIPT_CHAR',
-      '「²」のような小さい数字は使えません。キーパッドの「指数」ボタンで書いてね。');
-  }
   if (INVISIBLE_CHARS.test(raw)) {
     throw new AnswerError('INVISIBLE_CHAR', '見えない文字が入っています。入力を消してやり直そう。');
   }
 
-  let s = raw.normalize('NFKC');
+  // IME の上付き数字（a³・x²）は、NFKC で「a3」に潰れる前に指数へ読み替える（4⁴ は 4^{4}）。
+  let s = raw.replace(SUPERSCRIPT_RUN, m => `^{${[...m].map(c => SUPERSCRIPT_DIGITS[c]).join('')}}`);
+  s = s.normalize('NFKC');
 
   if (/\\placeholder/.test(s)) {
     throw new AnswerError('INCOMPLETE', 'まだ入力していないところがあるよ。');
+  }
+  // IME で確定した √ を MathLive が \surd にしたもの。生の LaTeX を見せずに案内する
+  if (/\\surd(?![A-Za-z])/.test(s)) {
+    throw new AnswerError('IME_ROOT', '「√」がうまく入りませんでした。欄を消して、√ はボタンで入れよう。');
   }
   if (/\\sqrt\s*\[/.test(s)) {
     throw new AnswerError('UNSUPPORTED', '3乗根は、この問題では使いません。');
@@ -322,14 +335,20 @@ function preprocess(source) {
   // Unicode記号の吸収（IME・貼り付け対策）
   s = s.replace(/[−‐‑‒–—―ー]/g, '-')
        .replace(/[×✕✖]/g, '*')
-       .replace(/[・⋅]/g, '*');
+       .replace(/[・⋅·∙]/g, '*');   // 中点（・ ⋅ · ∙）はかけ算の記号（nyushi-core と同じ）
   // ÷ と \div は「わり算の記号」、ASCIIの / は「分数のつもりのスラッシュ」として区別する（案内文が変わる）
 
   // 単一文字の \mathrm{x} などは中身を取り出す
   s = s.replace(/\\(?:mathrm|mathit|text|operatorname)\s*\{\s*([A-Za-z])\s*\}/g, '$1');
 
   // 空白コマンド（長いものから順に）
-  s = s.replace(/\\qquad|\\quad|\\left|\\right|\\!|\\,|\\;|\\:|\\ |~/g, '');
+  s = s.replace(/\\left|\\right/g, '');
+  s = s.replace(/\\qquad|\\quad|\\!|\\,|\\;|\\:|\\ |~/g, ' ');
+  // 数字と数字が空白で区切られている（-2 5）のは並び書き。25 と読まない（nyushi-core と同じ）。
+  // 入力欄は mathModeSpace='\\:' なので、スペースキーの空白は \: として届く。
+  if (/[0-9.]\s+[0-9.]/.test(s)) {
+    throw new AnswerError('SPACED_DIGITS', '数字の間に空白があります。1つの数として書き直そう。');
+  }
 
   // 別名の統一
   s = s.replace(/\\dfrac|\\tfrac|\\cfrac/g, '\\frac')
@@ -343,7 +362,10 @@ function preprocess(source) {
 }
 
 function tokenize(source) {
-  const s = preprocess(source);
+  return tokenizePrepared(preprocess(source));
+}
+
+function tokenizePrepared(s) {
   const tokens = [];
   let i = 0;
   while (i < s.length) {
@@ -375,6 +397,8 @@ function tokenize(source) {
     const ch = rest[0];
     // 大文字で書いても受理する（X → x）。文字の種類の判定は allowedVariables 側で行う。
     if (/[A-Za-z]/.test(ch)) { tokens.push({ t: 'VAR', name: ch.toLowerCase() }); i++; continue; }
+    // IME で「るーと」を変換した記号の √。√23 は √(23)、√2x は √2·x（nyushi-core と同じ読み方）
+    if (ch === '√') { tokens.push({ t: 'ROOT' }); i++; continue; }
     if (ch === '/') { tokens.push({ t: '/', slash: true }); i++; continue; }
     if (ch === '÷') { tokens.push({ t: '/', slash: false }); i++; continue; }
     if ('+-*^(){}'.includes(ch)) { tokens.push({ t: ch }); i++; continue; }
@@ -397,10 +421,13 @@ function tokenize(source) {
  *           | FRAC group group | SQRT group
  * ========================================================== */
 
-const ATOM_START = new Set(['NUM', 'DEC', 'VAR', '(', '{', 'FRAC', 'SQRT']);
+const ATOM_START = new Set(['NUM', 'DEC', 'VAR', '(', '{', 'FRAC', 'SQRT', 'ROOT']);
 
 export function parseAst(latex) {
-  const tokens = tokenize(latex);
+  return parseTokens(tokenize(latex));
+}
+
+function parseTokens(tokens) {
   let p = 0, depth = 0;
   const peek = () => (tokens[p] ? tokens[p].t : null);
   const accept = t => (peek() === t ? (p++, true) : false);
@@ -450,6 +477,13 @@ export function parseAst(latex) {
       return { k: 'frac', num, den };
     }
     if (t === 'SQRT') { p++; return { k: 'sqrt', a: group('根号') }; }
+    if (t === 'ROOT') {   // √23 は √(23)。すぐ後ろの数・文字・かっこ1つだけが根号の中
+      p++;
+      const nt = peek();
+      if (nt === 'NUM' || nt === 'DEC' || nt === 'VAR' || nt === '(' || nt === '{') return { k: 'sqrt', a: atom() };
+      throw new AnswerError('INCOMPLETE', '根号の中を書こう。');
+    }
+    if (t === null) throw new AnswerError('INCOMPLETE', '式の続きを書こう。');
     throw new AnswerError('SYNTAX', '式として読み取れません。');
   }
 
@@ -608,22 +642,25 @@ function unwrapGroup(node) {
   return n;
 }
 
-/** 加減で結ばれた項へ分解する（深さ0のみ）。 */
+/** 加減で結ばれた項へ分解する（深さ0のみ）。ひき算の右側は符号を1つ持つ。 */
 function splitTerms(node) {
   const out = [];
-  (function walk(n) {
+  (function walk(n, neg) {
     const u = unwrapGroup(n);
-    if (u.k === 'add' || u.k === 'sub') { walk(u.a); walk(u.b); return; }
-    out.push(u);
-  })(node);
+    if (u.k === 'add') { walk(u.a, neg); walk(u.b, 0); return; }
+    if (u.k === 'sub') { walk(u.a, neg); walk(u.b, 1); return; }
+    out.push({ node: u, neg });
+  })(node, 0);
   return out;
 }
 
+/** 因数に分ける（書いた順を保つ）。単項マイナスの数を out.negs に数える。 */
 function flattenFactors(node, out) {
   const u = unwrapGroup(node);
-  if (u.k === 'mul') { flattenFactors(u.a, out); flattenFactors(u.b, out); return; }
-  if (u.k === 'neg') { flattenFactors(u.a, out); return; }
+  if (u.k === 'mul') { flattenFactors(u.a, out); flattenFactors(u.b, out); return out; }
+  if (u.k === 'neg') { out.negs = (out.negs || 0) + 1; flattenFactors(u.a, out); return out; }
   out.push(u);
+  return out;
 }
 
 function constantValue(node) {
@@ -633,22 +670,48 @@ function constantValue(node) {
   } catch { return null; }
 }
 
+function leadingNegs(node) {
+  let n = 0, u = unwrapGroup(node);
+  while (u && u.k === 'neg') { n++; u = unwrapGroup(u.a); }
+  return n;
+}
+
+/**
+ * 形の区分（高校入試対策シリーズ共通の線引き。2026-10-17・2026-10-23 決定）
+ *   UNFINISHED … 途中（約分・根号・有理化・同類項・展開・数の計算の残り）→ ×「あと一歩：」
+ *   NOTATION   … 書き方の決まり違反（1x・ba・x·3・÷・.5・帯分数・符号の重ね書き など）→ ×「書き方：」
+ *   NEGATIVE_DENOMINATOR … 分母にだけマイナス（\frac{a}{-b}）→ △（正解に数えず書き直しを促す）
+ * 両方あるときは途中を優先して表示する（formFlags には全部入る）。
+ */
+export const UNFINISHED = ['NOT_EXPANDED', 'NOT_COLLECTED', 'UNEVALUATED_CONSTANT', 'FRACTION_NOT_REDUCED',
+  'FRACTION_NESTED', 'RADICAL_NOT_SIMPLE', 'RADICAL_REPEATED', 'RADICAL_IN_DENOMINATOR', 'VAR_REPEATED',
+  'VAR_IN_DENOMINATOR'];
+export const NOTATION = ['DOUBLE_SIGN', 'NOTATION_ONE', 'NOTATION_ORDER', 'NOTATION_TIMES', 'NOTATION_DIV',
+  'MIXED_NUMBER', 'LEADING_DOT', 'ZERO_COEFFICIENT_TERM', 'DECIMAL_REQUIRED', 'DECIMAL_NOT_ALLOWED', 'UNKNOWN_FORM'];
+
 const FORM_MESSAGES = {
-  FRACTION_NOT_REDUCED: '分数は約分して、これ以上簡単にできない形で答えよう。',
-  NEGATIVE_DENOMINATOR: '分母は正の数にして、符号は分数の前に出そう。',
-  RADICAL_NOT_SIMPLE: '根号の中に平方の因数を残さない形（最も簡単な形）にしよう。',
-  RADICAL_IN_DENOMINATOR: '分母に根号を残さない形（有理化した形）にしよう。',
-  RADICAL_REPEATED: '根号どうしは1つの根号にまとめてから簡単にしよう。',
-  VAR_REPEATED: '同じ文字どうしは指数を使って1つにまとめよう。',
-  VAR_IN_DENOMINATOR: '分母に文字が残らない形にしよう。',
-  NOT_EXPANDED: 'かっこを残さず、展開した形で答えよう。',
-  NOT_COLLECTED: '同じ文字・同じ根号の項は、係数をまとめて1つにしよう。',
-  UNEVALUATED_CONSTANT: '数どうしの計算は最後まで済ませてから答えよう。',
-  ZERO_COEFFICIENT_TERM: '係数が0の項は書かず、必要な項だけで答えよう。',
-  FRACTION_NESTED: '分数の中に分数を残さない形にしよう。',
-  DECIMAL_NOT_ALLOWED: 'この問題は小数ではない形で答えよう。',
-  DECIMAL_REQUIRED: '小数で答える指示があります。分数ではなく小数の形で書こう。',
-  UNKNOWN_FORM: '答えの形をもう一度確かめよう。'
+  FRACTION_NOT_REDUCED: 'あと一歩：分数は約分して、これ以上簡単にできない形で答えよう。',
+  RADICAL_NOT_SIMPLE: 'あと一歩：根号の中に平方の因数を残さない形（最も簡単な形）にしよう。',
+  RADICAL_IN_DENOMINATOR: 'あと一歩：分母に根号を残さない形（有理化した形）にしよう。',
+  RADICAL_REPEATED: 'あと一歩：根号どうしは1つの根号にまとめてから簡単にしよう。',
+  VAR_REPEATED: 'あと一歩：同じ文字どうしは指数を使って1つにまとめよう。',
+  VAR_IN_DENOMINATOR: 'あと一歩：分母に文字が残らない形にしよう。',
+  NOT_EXPANDED: 'あと一歩：かっこを残さず、展開した形で答えよう。',
+  NOT_COLLECTED: 'あと一歩：同じ文字・同じ根号の項は、係数をまとめて1つにしよう。',
+  UNEVALUATED_CONSTANT: 'あと一歩：数どうしの計算は最後まで済ませてから答えよう。',
+  FRACTION_NESTED: 'あと一歩：分数の中に分数や小数を残さない形にしよう。',
+  DOUBLE_SIGN: '書き方：符号は1つにまとめよう（+-3 は -3）。',
+  NOTATION_ONE: '書き方：1 は省こう（1x は x、x^1 は x）。',
+  NOTATION_ORDER: '書き方：数は文字・根号・かっこの前に、文字はアルファベット順に書こう。',
+  NOTATION_TIMES: '書き方：文字や根号のかけ算では × や・を省こう。',
+  NOTATION_DIV: '書き方：÷ は使わずに、分数の形で書こう。',
+  MIXED_NUMBER: '書き方：帯分数は使わないよ。仮分数で答えよう。',
+  LEADING_DOT: '書き方：小数点の前の 0 を省かずに書こう（.5 は 0.5）。',
+  ZERO_COEFFICIENT_TERM: '書き方：係数が0の項は書かず、必要な項だけで答えよう。',
+  DECIMAL_REQUIRED: '書き方：小数で答える指示があります。分数ではなく小数の形で書こう。',
+  DECIMAL_NOT_ALLOWED: '書き方：この問題は小数ではない形で答えよう。',
+  UNKNOWN_FORM: '書き方：答えの形をもう一度確かめよう。',
+  NEGATIVE_DENOMINATOR: '値は合っています。マイナスは分母ではなく、分子か分数の前に書こう。'
 };
 
 /** 小数を受け付けない理由は、正答が整数か分数か根号かで書き分ける。 */
@@ -657,30 +720,66 @@ function decimalMessage(spec) {
   if (spec.kind === 'radical') return '小数（およその値）ではなく、根号を使った正確な形で答えよう。';
   const rational = asRational(spec.canonicalValue);
   if (rational && rational.d === 1n) return '小数ではなく整数で答えよう。';
-  if (rational) return 'この問題は分数で答えよう。小数ではなく、分数の形で書くよ。';
+  if (rational) return '小数ではわり切れない数だよ。分数の形で答えよう。';
   return '小数を使わずに、分数や文字式の形で答えよう。';
 }
 
 export function formMessage(flag, spec) {
-  if (flag === 'DECIMAL_NOT_ALLOWED') return decimalMessage(spec);
+  if (flag === 'DECIMAL_NOT_ALLOWED') return `書き方：${decimalMessage(spec)}`;
   return FORM_MESSAGES[flag] || FORM_MESSAGES.UNKNOWN_FORM;
 }
 
-function analyzeFraction(node, policy, flags, depthInfo) {
+/** 形の違反の配列から、画面に出す区分（途中 → 書き方 → 分母のマイナス の順）を決める。 */
+export function classifyFlags(flags) {
+  for (const f of UNFINISHED) if (flags.includes(f)) return { kind: 'unfinished', reason: f };
+  for (const f of NOTATION) if (flags.includes(f)) return { kind: 'notation', reason: f };
+  if (flags.includes('NEGATIVE_DENOMINATOR')) return { kind: 'negDenominator', reason: 'NEGATIVE_DENOMINATOR' };
+  if (flags.length) return { kind: 'notation', reason: 'UNKNOWN_FORM' };
+  return { kind: 'correct', reason: '' };
+}
+
+/** 明示的なかけ算の記号（\cdot・×・*）を、文字・根号・かっこの式に使っているか */
+function explicitTimes(node, flags) {
+  const u = unwrapGroup(node);
+  if (u.k === 'neg') { explicitTimes(u.a, flags); return; }
+  if (u.k !== 'mul') return;
+  if (u.explicit && !(constantValue(u.a) !== null && constantValue(u.b) !== null)) flags.push('NOTATION_TIMES');
+  explicitTimes(u.a, flags);
+  explicitTimes(u.b, flags);
+}
+
+/** 因数の並び順の区分: 0=数、1=文字・根号、2=かっこの式 */
+function factorClass(f) {
+  switch (f.k) {
+    case 'num': case 'dec': return 0;
+    case 'frac': case 'div': return constantValue(f) !== null ? 0 : 1;
+    case 'var': case 'sqrt': return 1;
+    case 'pow': {
+      let b = unwrapGroup(f.a);
+      while (b.k === 'neg') b = unwrapGroup(b.a);
+      if (b.k === 'num' || b.k === 'dec') return 0;
+      if (b.k === 'var' || b.k === 'sqrt') return 1;
+      return 2;
+    }
+    default: return 2;
+  }
+}
+
+function analyzeFraction(node, policy, flags, depthInfo, outerNegs) {
   const num = node.k === 'frac' ? node.num : node.a;
   const den = node.k === 'frac' ? node.den : node.b;
 
-  // 6÷2 のように「÷ の記号で書かれた数どうしのわり算」は、計算し切っていない扱いにする。
+  // ÷ の記号は、文字式でも数どうしでも書き方の決まり違反。数どうしなら計算し切っていない（途中）も付く。
   // スラッシュ（-5/6）は分数を意図した書き方なので、ここには入れない。
-  if (node.k === 'div' && !node.slash && constantValue(num) && constantValue(den)) {
-    flags.push('UNEVALUATED_CONSTANT');
-    return;
+  if (node.k === 'div' && !node.slash) {
+    flags.push('NOTATION_DIV');
+    if (constantValue(num) && constantValue(den)) { flags.push('UNEVALUATED_CONSTANT'); return; }
   }
+  // 分子・分母に小数が残る分数（\frac{1.5}{3}）は計算し切っていない
+  if (containsDecimal(num) || containsDecimal(den)) flags.push('UNEVALUATED_CONSTANT');
 
   // 分母
-  const denNode = unwrapGroup(den);
-  const denFactors = [];
-  flattenFactors(denNode, denFactors);
+  const denFactors = flattenFactors(den, []);
   for (const f of denFactors) {
     if (f.k === 'sqrt') { if (policy.requireSimplestRadical !== false) flags.push('RADICAL_IN_DENOMINATOR'); }
     else if (f.k === 'var') flags.push('VAR_IN_DENOMINATOR');
@@ -690,7 +789,12 @@ function analyzeFraction(node, policy, flags, depthInfo) {
   }
   const denValue = constantValue(den);
   if (denValue) {
-    if (denValue.n < 0n && policy.requirePositiveDenominator !== false) flags.push('NEGATIVE_DENOMINATOR');
+    if (denValue.n < 0n && policy.requirePositiveDenominator !== false) {
+      // 分母にだけマイナス → △。ほかにも符号がある（\frac{-2}{-3}・-\frac{2}{-3}）→ 符号の書き方
+      const numConst = constantValue(num);
+      const numNeg = leadingNegs(num) > 0 || (numConst !== null && numConst.n < 0n);
+      flags.push(numNeg || outerNegs > 0 ? 'DOUBLE_SIGN' : 'NEGATIVE_DENOMINATOR');
+    }
     if (denValue.d !== 1n) flags.push('FRACTION_NESTED');
     if (babs(denValue.n) === 1n && denValue.d === 1n) flags.push('FRACTION_NOT_REDUCED');
   }
@@ -713,16 +817,23 @@ function analyzeFraction(node, policy, flags, depthInfo) {
   }
 }
 
-function analyzeTerm(node, policy, flags, depthInfo) {
-  const factors = [];
-  flattenFactors(node, factors);
-  let numeric = 0, radicals = 0, fractions = 0;
+function analyzeTerm(node, termNeg, policy, flags, depthInfo) {
+  explicitTimes(node, flags);
+  const factors = flattenFactors(node, []);
+  const negs = (factors.negs || 0) + termNeg;
+  let numeric = 0, radicals = 0, fractions = 0, maxClass = 0;
   const seenVars = new Set();
+  const varOrder = [];
 
-  for (const raw of factors) {
-    const f = unwrapGroup(raw);
+  for (const f of factors) {
+    const cls = factorClass(f);
+    if (cls < maxClass) flags.push('NOTATION_ORDER');
+    if (cls > maxClass) maxClass = cls;
     switch (f.k) {
-      case 'num': numeric++; break;
+      case 'num':
+        numeric++;
+        if (f.n === 1n && factors.length > 1) flags.push('NOTATION_ONE');
+        break;
       case 'dec':
         numeric++;
         if (!policy.decimalAllowed) flags.push('DECIMAL_NOT_ALLOWED');
@@ -730,13 +841,17 @@ function analyzeTerm(node, policy, flags, depthInfo) {
       case 'var':
         if (seenVars.has(f.name)) flags.push('VAR_REPEATED');
         seenVars.add(f.name);
+        varOrder.push(f.name);
         break;
       case 'pow': {
+        if (f.e === 1) flags.push('NOTATION_ONE');
         let base = unwrapGroup(f.a);
         while (base.k === 'neg') base = unwrapGroup(base.a);   // (-3)^2 は数の計算として扱う
         if (base.k === 'var') {
           if (seenVars.has(base.name)) flags.push('VAR_REPEATED');
           seenVars.add(base.name);
+          varOrder.push(base.name);
+          if (f.e === 0) flags.push('UNEVALUATED_CONSTANT');
         } else if (base.k === 'num' || base.k === 'dec') {
           flags.push('UNEVALUATED_CONSTANT');
         } else if (base.k === 'sqrt') {
@@ -764,7 +879,7 @@ function analyzeTerm(node, policy, flags, depthInfo) {
       case 'frac':
       case 'div': {
         // スラッシュで書いた分数（-5/6）は分数として扱う。入力の書き方で不正解にしない。
-        // ただし「小数で答えなさい」の指示がある問題では、分数の形そのものが形式エラー。
+        // ただし「小数で答えなさい」の指示がある問題では、分数の形そのものが書き方の違反。
         // 「6.8÷2」のように ÷ の記号で数どうしのわり算を残しただけの入力は分数ではないので、
         // 「分数ではなく小数で」ではなく「計算し切っていない」として扱う。
         const constantDivision = f.k === 'div' && !f.slash
@@ -772,7 +887,7 @@ function analyzeTerm(node, policy, flags, depthInfo) {
         if (policy.decimalRequired && !constantDivision) flags.push('DECIMAL_REQUIRED');
         fractions++;
         if (fractions > 1 || depthInfo > 0) flags.push('FRACTION_NESTED');
-        analyzeFraction(f, policy, flags, depthInfo);
+        analyzeFraction(f, policy, flags, depthInfo, negs);
         break;
       }
       case 'add':
@@ -783,6 +898,7 @@ function analyzeTerm(node, policy, flags, depthInfo) {
         flags.push('UNKNOWN_FORM');
     }
   }
+  for (let i = 1; i < varOrder.length; i++) if (varOrder[i] < varOrder[i - 1]) flags.push('NOTATION_ORDER');
   if (numeric > 1) flags.push('UNEVALUATED_CONSTANT');
   if (numeric >= 1 && fractions >= 1) flags.push('UNEVALUATED_CONSTANT');
 }
@@ -791,14 +907,14 @@ function analyzeTerm(node, policy, flags, depthInfo) {
 function inspectNode(node, policy, flags, depthInfo = 0) {
   const terms = splitTerms(node);
   const seen = new Set();
-  for (const term of terms) {
-    analyzeTerm(term, policy, flags, depthInfo);
+  for (const { node: term, neg } of terms) {
+    analyzeTerm(term, neg, policy, flags, depthInfo);
     let key = null;
     try {
       const v = evalAst(term, {});
       const keys = Object.keys(v);
       // 0y や 3x-3x のように、項そのものが 0 になる形は答えに残さない。
-      // 単独の「0」は正しい最簡形なので、和・差の中に現れたときだけ未整理にする。
+      // 単独の「0」は正しい最簡形なので、和・差の中に現れたときだけ違反にする。
       if (terms.length > 1 && keys.length === 0) flags.push('ZERO_COEFFICIENT_TERM');
       if (keys.length === 1) key = keys[0];
     } catch { key = null; }
@@ -811,11 +927,24 @@ function inspectNode(node, policy, flags, depthInfo = 0) {
   }
 }
 
-/** 答案形式の違反を配列で返す。空配列なら形式も正しい。 */
-export function inspectForm(ast, formPolicy = {}) {
+/** 前処理した文字列だけで分かる書き方の違反（符号の重ね書き・.5）。 */
+function textFlags(prepared, flags) {
+  if (/[+\-][+\-]/.test(prepared) || /[+\-]\([+\-]/.test(prepared)) flags.push('DOUBLE_SIGN');
+  if (/(^|[^0-9])\.\d/.test(prepared)) flags.push('LEADING_DOT');
+}
+
+/** 答案形式の違反を配列で返す。空配列なら形式も正しい。prepared は前処理した入力（省略可）。 */
+export function inspectForm(ast, formPolicy = {}, prepared = '') {
   const flags = [];
+  if (prepared) textFlags(prepared, flags);
   inspectNode(ast, formPolicy, flags, 0);
   return [...new Set(flags)];
+}
+
+function containsDecimal(node) {
+  if (!node || typeof node !== 'object') return false;
+  if (node.k === 'dec') return true;
+  return ['a', 'b', 'num', 'den'].some(field => containsDecimal(node[field]));
 }
 
 /* ============================================================
@@ -855,12 +984,6 @@ function matchMisconception(value, matchers) {
   return null;
 }
 
-/**
- * 採点。値の同値判定と形式判定を分けて返す。
- *   status: 'CORRECT' | 'INCORRECT' | 'FORM_ERROR' | 'INVALID_INPUT'（共通仕様6-1の列挙）
- *   formCode: 'NOT_SIMPLIFIED' | 'CALC-COLLECT'（FORM_ERROR時のみ）
- *   valueCorrect: 値として正しいか（形式技能と別記録するため）
- */
 // 「単位を書いたのだろう」と判断するためのゆるい検出。取り除いてよいかの判断は stripUnit（厳格）が持つ。
 const UNIT_SUFFIX = /(?:cm|mm|km|kg|mL|ml|L|g|m)(?:\^?\{?\d\}?|[²³])?$|(?:度|個|本|冊|円|人|分|秒|回|枚)$/;
 
@@ -895,12 +1018,6 @@ function approximate(value) {
   return sum;
 }
 
-function containsDecimal(node) {
-  if (!node || typeof node !== 'object') return false;
-  if (node.k === 'dec') return true;
-  return ['a', 'b', 'num', 'den'].some(field => containsDecimal(node[field]));
-}
-
 /** 「4a+16cm」のように単位を書いた入力かどうか。 */
 function looksLikeUnitSuffix(input) {
   const text = String(input).normalize('NFKC')
@@ -909,11 +1026,38 @@ function looksLikeUnitSuffix(input) {
   return UNIT_SUFFIX.test(text);
 }
 
+/** 有限小数で書ける有理数か（分母が 2 と 5 だけでできている） */
+function isTerminating(r) {
+  let d = r.d;
+  while (d % 2n === 0n) d /= 2n;
+  while (d % 5n === 0n) d /= 5n;
+  return d === 1n;
+}
+
+function result(status, kind, reason, extra) {
+  return Object.assign({
+    status, kind, reason: reason || '', flags: [], formFlags: [], message: '',
+    code: null, formCode: null, valueCorrect: false, studentLatex: null, studentCanonical: null
+  }, extra || {});
+}
+
+/**
+ * 採点。値の同値判定と形式判定を分けて返す（高校入試対策シリーズ共通の返り値）。
+ *   status: 'correct' | 'notReduced' | 'negDenominator' | 'wrong' | 'unreadable' | 'empty'
+ *   kind:   'correct' | 'unfinished'（途中）| 'notation'（書き方）| 'negDenominator' | 'wrong' | 'incomplete'
+ *   reason: 形の違反・読めない理由のコード（UNFINISHED / NOTATION / AnswerError の code）
+ *   message: 画面に出す一言（途中は「あと一歩：」、書き方は「書き方：」で始まる）
+ *   valueCorrect: 値として正しいか（形式技能と別記録するため）
+ * empty・unreadable は採点しない（提出に数えない・記録しない）。consumes() が false。
+ */
 export function judge(input, question) {
   const spec = question.answerSpec;
 
+  if (isBlank(input)) return result('empty', 'incomplete', 'empty', { message: '答えを入力してから決定しよう。' });
+
   // 単位を持つ問題で答案に単位まで書いた場合は「誤答」にする（書き直しではない）。
   // 単位のせいだと特定できる（外すと式として読める）ときだけこの扱いにする。
+  // （2026-10-23 時点で単位つきの問題は出題していない。仕組みだけ残す）
   if (spec.unit && spec.unit.symbol) {
     const { body, hadUnit } = splitUnitSuffix(input, spec.unit);
     if (hadUnit) {
@@ -921,70 +1065,77 @@ export function judge(input, question) {
       try { withoutUnit = parseExpression(body, { allowedVariables: spec.allowedVariables }); }
       catch { withoutUnit = null; }
       if (withoutUnit) {
-        return {
-          status: 'INCORRECT', code: 'CALC-UNIT', formCode: null,
-          valueCorrect: false, formFlags: [],
+        return result('wrong', 'wrong', 'CALC-UNIT', {
+          code: 'CALC-UNIT',
           message: diagnosticMessage('CALC-UNIT'),
-          studentLatex: `${astToLatex(withoutUnit.ast)}\\;\\mathrm{${spec.unit.symbol}}`,
+          studentLatex: `${astToLatex(withoutUnit.ast)}\;\\mathrm{${spec.unit.symbol}}`,
           studentCanonical: canonicalLatex(withoutUnit.value)
-        };
+        });
       }
     }
   }
 
-  let parsed;
+  let prepared, ast, value;
   try {
-    parsed = parseExpression(input, { allowedVariables: spec.allowedVariables });
+    prepared = preprocess(input);
+    ast = parseTokens(tokenizePrepared(prepared));
+    value = evalAst(ast, { allowedVariables: spec.allowedVariables });
   } catch (error) {
     if (!(error instanceof AnswerError)) throw error;
-    // 単位の案内は、単位を持つ問題だけに出す。
-    // 単位のない問題で「am」のように文字を打ち間違えた場合は、文字そのものを指摘する。
-    const message = (error.code === 'BAD_VARIABLE' && spec.unit && looksLikeUnitSuffix(input))
-      ? diagnosticMessage('CALC-UNIT')
-      : error.message;
-    return {
-      status: 'INVALID_INPUT', code: error.code, formCode: null,
-      valueCorrect: false, formFlags: [], message, studentLatex: null, studentCanonical: null
-    };
-  }
-
-  const studentLatex = astToLatex(parsed.ast);          // 生徒が書いた形（安全に組み直したもの）
-  const studentCanonical = canonicalLatex(parsed.value);  // その値を最も簡単な形にしたもの
-
-  if (valueEquals(parsed.value, spec.canonicalValue)) {
-    const flags = inspectForm(parsed.ast, spec.formPolicy || {});
-    if (flags.length) {
-      const first = flags[0];
-      const formCode = first === 'NOT_COLLECTED' ? 'CALC-COLLECT'
-        : first === 'DECIMAL_REQUIRED' ? 'FORM-DECIMAL_REQUIRED'
-        : 'NOT_SIMPLIFIED';
-      return {
-        status: 'FORM_ERROR', code: formCode, formCode,
-        valueCorrect: true, formFlags: flags,
-        message: formMessage(first, spec), studentLatex, studentCanonical
-      };
+    if (error.code === 'EMPTY') return result('empty', 'incomplete', 'empty', { code: 'EMPTY', message: error.message });
+    // 帯分数（2\frac{1}{2}）は書き方の決まり違反として採点する（積とも帯分数とも読まない）
+    if (error.code === 'AMBIGUOUS_MIXED_NUMBER') {
+      return result('notReduced', 'notation', 'MIXED_NUMBER', {
+        code: 'MIXED_NUMBER', formCode: 'NOTATION', flags: ['MIXED_NUMBER'], formFlags: ['MIXED_NUMBER'],
+        message: FORM_MESSAGES.MIXED_NUMBER
+      });
     }
-    return {
-      status: 'CORRECT', code: null, formCode: null,
-      valueCorrect: true, formFlags: [], message: null, studentLatex, studentCanonical
-    };
+    // 使わない文字は値の誤り（単位を持つ問題で単位らしいときだけ、単位の案内を出す）
+    if (error.code === 'BAD_VARIABLE') {
+      const message = (spec.unit && looksLikeUnitSuffix(input)) ? diagnosticMessage('CALC-UNIT') : error.message;
+      return result('wrong', 'wrong', 'badVariable', { code: 'BAD_VARIABLE', message });
+    }
+    return result('unreadable', 'incomplete', error.code, { code: error.code, message: error.message });
   }
 
-  const matched = matchMisconception(parsed.value, question.diagnosticMatchers);
+  const studentLatex = astToLatex(ast);            // 生徒が書いた形（安全に組み直したもの）
+  const studentCanonical = canonicalLatex(value);  // その値を最も簡単な形にしたもの
+
+  if (valueEquals(value, spec.canonicalValue)) {
+    const flags = inspectForm(ast, spec.formPolicy || {}, prepared);
+    const { kind, reason } = classifyFlags(flags);
+    const base = { valueCorrect: true, flags, formFlags: flags, studentLatex, studentCanonical };
+    if (kind === 'correct') return result('correct', 'correct', '', base);
+    if (kind === 'negDenominator') {
+      return result('negDenominator', 'negDenominator', reason,
+        { ...base, code: reason, formCode: reason, message: FORM_MESSAGES.NEGATIVE_DENOMINATOR });
+    }
+    const formCode = reason === 'NOT_COLLECTED' ? 'CALC-COLLECT'
+      : reason === 'DECIMAL_REQUIRED' ? 'FORM-DECIMAL_REQUIRED'
+      : kind === 'notation' ? 'NOTATION' : 'NOT_SIMPLIFIED';
+    return result('notReduced', kind, reason, { ...base, code: formCode, formCode, message: formMessage(reason, spec) });
+  }
+
+  const matched = matchMisconception(value, question.diagnosticMatchers);
   let message = matched ? matched.message : diagnosticMessage('UNCLASSIFIED');
-  // 小数で「およその値」を書いた誤答は、原因が計算ではなく答案形式にある。
-  // ただし小数を受理している問題（正答が整数）では、誤りは値そのものなので通常の診断文にする。
-  const decimalRejected = !(spec.formPolicy && spec.formPolicy.decimalAllowed);
-  if (!matched && decimalRejected && containsDecimal(parsed.ast)) {
-    const student = approximate(parsed.value);
+  // 小数で「およその値」を書いた誤答（3√2 に 4.243、1/3 に 0.33）は、原因が計算ではなく答案形式にある。
+  // 正答が有限小数で書ける問題では、誤りは値そのものなので通常の診断文にする。
+  const truthRational = asRational(spec.canonicalValue);
+  const truthTerminating = truthRational !== null && isTerminating(truthRational);
+  if (!matched && !truthTerminating && containsDecimal(ast)) {
+    const student = approximate(value);
     const truth = approximate(spec.canonicalValue);
     if (student !== null && truth !== null && Math.abs(student - truth) <= Math.max(1, Math.abs(truth)) * 0.02) {
       message = decimalMessage(spec);
     }
   }
-  return {
-    status: 'INCORRECT', code: matched ? matched.code : 'UNCLASSIFIED', formCode: null,
-    valueCorrect: false, formFlags: [],
-    message, studentLatex, studentCanonical
-  };
+  return result('wrong', 'wrong', 'value', {
+    code: matched ? matched.code : 'UNCLASSIFIED', message, studentLatex, studentCanonical
+  });
 }
+
+/* ---------- 画面・得点（高校入試対策シリーズ共通） ---------- */
+export function mark(r) { const st = r && r.status; return st === 'correct' ? '○' : st === 'negDenominator' ? '△' : '×'; }
+export function isCorrect(r) { return (r && r.status) === 'correct'; }
+/** 採点して問題を消費するか（空欄・書きかけは消費しない） */
+export function consumes(r) { const st = r && r.status; return st !== 'empty' && st !== 'unreadable'; }
